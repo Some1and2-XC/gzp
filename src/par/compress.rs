@@ -16,8 +16,7 @@
 //! # }
 //! ```
 use std::{
-    io::{self, Write},
-    thread::JoinHandle,
+    borrow::BorrowMut, io::{self, Write}, thread::JoinHandle
 };
 
 use bytes::{Bytes, BytesMut};
@@ -44,6 +43,9 @@ where
     format: F,
     /// Whether or not to pin threads to specific cpus and what core to start pins at
     pin_threads: Option<usize>,
+    /// The dictionary used in creating the compressor.
+    dictionary: Option<Bytes>,
+
 }
 
 impl<F> ParCompressBuilder<F>
@@ -58,6 +60,7 @@ where
             compression_level: Compression::new(3),
             format: F::new(),
             pin_threads: None,
+            dictionary: None,
         }
     }
 
@@ -106,14 +109,21 @@ where
         self
     }
 
+    /// Set the [`dictionary`](ParCompressBuilder.dictionary).
+    pub fn dictionary(mut self, dictionary: Option<Bytes>) -> Self {
+        self.dictionary = dictionary;
+        self
+    }
+
     /// Create a configured [`ParCompress`] object.
-    pub fn from_writer<W: Write + Send + 'static>(self, writer: W) -> ParCompress<F> {
+    pub fn from_writer<W: Write + Send + 'static>(mut self, writer: W) -> ParCompress<F> {
         let (tx_compressor, rx_compressor) = bounded(self.num_threads * 2);
         let (tx_writer, rx_writer) = bounded(self.num_threads * 2);
         let buffer_size = self.buffer_size;
         let comp_level = self.compression_level;
         let pin_threads = self.pin_threads;
         let format = self.format;
+        let dictionary = self.dictionary.take();
         let handle = std::thread::spawn(move || {
             ParCompress::run(
                 &rx_compressor,
@@ -129,7 +139,7 @@ where
             handle: Some(handle),
             tx_compressor: Some(tx_compressor),
             tx_writer: Some(tx_writer),
-            dictionary: None,
+            dictionary,
             buffer: BytesMut::with_capacity(buffer_size),
             buffer_size,
             format,
@@ -285,6 +295,11 @@ where
             }
         }
         Ok(())
+    }
+
+    /// Gets the inner dictionary of the compressor.
+    pub fn get_dictionary(&self) -> Option<&Bytes> {
+        self.dictionary.as_ref()
     }
 }
 
