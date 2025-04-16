@@ -253,6 +253,7 @@ where
             // We test and warn in the constructors for this case, so no warning should be needed here.
             (vec![], None)
         };
+
         let handles: Vec<JoinHandle<Result<(), GzpError>>> = (0..num_threads)
             .map(|i| {
                 let rx = rx.clone();
@@ -292,10 +293,12 @@ where
         if write_header_on_start {
             writer.write_all(&format.header(compression_level))?;
         }
+
         let mut running_check = match checksum {
             Some(v) => v,
             None => F::create_check(),
         };
+
         while let Ok(chunk_chan) = rx_writer.recv() {
             let chunk_chan: Receiver<CompressResult<F::C>> = chunk_chan;
             let (check, chunk) = chunk_chan.recv()??;
@@ -393,7 +396,8 @@ where
     /// # Panics
     /// - If called twice
     fn finish(&mut self) -> Result<(), GzpError> {
-        self.flush_last(true)?;
+
+        self.flush_last(self.write_footer_on_exit)?;
 
         // while !self.tx_compressor.as_ref().unwrap().is_empty() {}
         // while !self.tx_writer.as_ref().unwrap().is_empty() {}
