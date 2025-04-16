@@ -164,6 +164,12 @@ where
         let write_footer_on_exit = self.write_footer_on_exit;
         let checksum = self.checksum;
         let checksum_dest = self.checksum_dest;
+
+        if !write_footer_on_exit && checksum_dest.is_none() {
+            warn!("If you're not writing a footer it might be a good idea to keep track of the checksum at the end.
+You might want to try using the [`ParCompressBuilder::checksum_dest()`] function!")
+        }
+
         let handle = std::thread::spawn(move || {
             ParCompress::run(
                 &rx_compressor,
