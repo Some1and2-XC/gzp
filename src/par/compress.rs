@@ -16,8 +16,7 @@
 //! # }
 //! ```
 use std::{
-    io::{self, Write},
-    thread::JoinHandle,
+    io::{self, Write}, thread::JoinHandle
 };
 
 use bytes::{Bytes, BytesMut};
@@ -44,6 +43,16 @@ where
     format: F,
     /// Whether or not to pin threads to specific cpus and what core to start pins at
     pin_threads: Option<usize>,
+    /// The dictionary used to initialize the [`ParCompress`] object with.
+    dictionary: Option<Bytes>,
+    /// A flag specifying if the encoder should write a header chunk when starting the compressor.
+    write_header_on_start: bool,
+    /// A flag specifying if the encoder should write a footer chunk automatically when finished.
+    write_footer_on_exit: bool,
+    /// A checksum supplied to start encoding from.
+    checksum: Option<F::C>,
+    /// A cell where the check sum gets set once compression is complete.
+    checksum_dest: Option<Sender<F::C>>,
 }
 
 impl<F> ParCompressBuilder<F>
@@ -58,6 +67,11 @@ where
             compression_level: Compression::new(3),
             format: F::new(),
             pin_threads: None,
+            dictionary: None,
+            write_header_on_start: true,
+            write_footer_on_exit: true,
+            checksum: None,
+            checksum_dest: None,
         }
     }
 
@@ -106,33 +120,75 @@ where
         self
     }
 
+    /// Set the [`dictionary`](ParCompressBuilder.dictionary).
+    pub fn dictionary(mut self, dictionary: Option<Bytes>) -> Self {
+        self.dictionary = dictionary;
+        self
+    }
+
+    /// Set the [`write_header_on_start`](ParCompressBuilder.write_header_on_start).
+    pub fn write_header_on_start(mut self, flag: bool) -> Self {
+        self.write_header_on_start = flag;
+        self
+    }
+
+
+    /// Set the [`write_footer_on_exit`](ParCompressBuilder.write_footer_on_exit).
+    pub fn write_footer_on_exit(mut self, flag: bool) -> Self {
+        self.write_footer_on_exit = flag;
+        self
+    }
+
+    /// Set the [`checksum`](ParCompressBuilder.checksum).
+    pub fn checksum(mut self, checksum: Option<F::C>) -> Self {
+        self.checksum = checksum;
+        self
+    }
+
+    /// Passes where the check sum should be passed once the compressor is done compressing.
+    pub fn checksum_dest(mut self, dest: Option<Sender<F::C>>) -> Self {
+        self.checksum_dest = dest;
+        self
+    }
+
     /// Create a configured [`ParCompress`] object.
     pub fn from_writer<W: Write + Send + 'static>(self, writer: W) -> ParCompress<F> {
         let (tx_compressor, rx_compressor) = bounded(self.num_threads * 2);
         let (tx_writer, rx_writer) = bounded(self.num_threads * 2);
         let buffer_size = self.buffer_size;
+        let num_threads = self.num_threads;
         let comp_level = self.compression_level;
-        let pin_threads = self.pin_threads;
         let format = self.format;
+        let pin_threads = self.pin_threads;
+        let write_header_on_start = self.write_header_on_start;
+        let write_footer_on_exit = self.write_footer_on_exit;
+        let checksum = self.checksum;
+        let checksum_dest = self.checksum_dest;
         let handle = std::thread::spawn(move || {
             ParCompress::run(
                 &rx_compressor,
                 &rx_writer,
                 writer,
-                self.num_threads,
+                num_threads,
                 comp_level,
                 format,
                 pin_threads,
+                write_header_on_start,
+                write_footer_on_exit,
+                checksum,
+                checksum_dest,
             )
         });
         ParCompress {
             handle: Some(handle),
             tx_compressor: Some(tx_compressor),
             tx_writer: Some(tx_writer),
-            dictionary: None,
+            dictionary: self.dictionary,
             buffer: BytesMut::with_capacity(buffer_size),
             buffer_size,
             format,
+            write_header_on_start: self.write_header_on_start,
+            write_footer_on_exit: self.write_footer_on_exit,
         }
     }
 }
@@ -158,6 +214,8 @@ where
     dictionary: Option<Bytes>,
     buffer_size: usize,
     format: F,
+    write_header_on_start: bool,
+    write_footer_on_exit: bool,
 }
 
 impl<F> ParCompress<F>
@@ -180,6 +238,10 @@ where
         compression_level: Compression,
         format: F,
         pin_threads: Option<usize>,
+        write_header_on_start: bool,
+        write_footer_on_exit: bool,
+        checksum: Option<F::C>,
+        checksum_dest: Option<Sender<F::C>>,
     ) -> Result<(), GzpError>
     where
         W: Write + Send + 'static,
@@ -227,25 +289,48 @@ where
             .collect();
 
         // Writer
-        writer.write_all(&format.header(compression_level))?;
-        let mut running_check = F::create_check();
+        if write_header_on_start {
+            writer.write_all(&format.header(compression_level))?;
+        }
+        let mut running_check = match checksum {
+            Some(v) => v,
+            None => F::create_check(),
+        };
         while let Ok(chunk_chan) = rx_writer.recv() {
             let chunk_chan: Receiver<CompressResult<F::C>> = chunk_chan;
             let (check, chunk) = chunk_chan.recv()??;
             running_check.combine(&check);
             writer.write_all(&chunk)?;
         }
-        let footer = format.footer(&running_check);
-        writer.write_all(&footer)?;
+
+        if write_footer_on_exit {
+            let footer = format.footer(&running_check);
+            writer.write_all(&footer)?;
+        }
         writer.flush()?;
 
         // Gracefully shutdown the compression threads
-        handles
+        let res = handles
             .into_iter()
             .try_for_each(|handle| match handle.join() {
                 Ok(result) => result,
                 Err(e) => std::panic::resume_unwind(e),
-            })
+            });
+
+        // Tries to send the checksum to its destination but prints the result instead if
+        // the OnceCell is already set.
+        if let Some(dest) = checksum_dest.as_ref() {
+            match dest.send(running_check) {
+                Ok(v) => v,
+                Err(e) => {
+                    let checksum = e.into_inner();
+                    warn!("GZP Error: Failed to send checksum to its destination! Check Sum: `{}` & Amount: `{}`.", checksum.sum(), checksum.amount());
+                },
+            };
+        }
+
+        return res;
+
     }
 
     /// Flush this output stream, ensuring all intermediately buffered contents are sent.
@@ -286,6 +371,12 @@ where
         }
         Ok(())
     }
+
+    /// Returns the dictionary as bytes from the encoder.
+    pub fn get_dict(&self) -> Option<&Bytes> {
+        self.dictionary.as_ref()
+    }
+
 }
 
 impl<F> ZWriter for ParCompress<F>
