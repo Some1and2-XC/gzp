@@ -16,7 +16,7 @@
 //! # }
 //! ```
 use std::{
-    io::{self, Write}, os::fd::AsFd, thread::JoinHandle
+    io::{self, Write}, thread::JoinHandle
 };
 
 use bytes::{Bytes, BytesMut};

@@ -659,7 +659,7 @@ impl<W: Write> ZWriter for SyncZ<BgzfSyncWriter<W>> {
 
 #[cfg(test)]
 mod test {
-    use std::io::{Read, Write};
+    use std::io::{Read, Seek, Write};
     use std::{
         fs::File,
         io::{BufReader, BufWriter},
@@ -1039,19 +1039,28 @@ mod test {
         // Here is the channel that the checksum is going to be passed to and from.
         let (checksum_tx, checksum_rx) = flume::unbounded::<Adler32>();
 
+        // Here we create a compressor.
         let mut parz: ParCompress<Zlib> = ParCompressBuilder::new()
             .write_footer_on_exit(false)
             .checksum_dest(Some(checksum_tx))
             .from_writer(output_writer)
             ;
 
+        // Here we write the first buffer
         parz.write_all(data1).unwrap();
+        // Grab the dictionary if it exists.
         let maybe_dict = parz.get_dict().cloned();
+        // and drop the compressor.
         drop(parz);
 
+        // Now we get the ending checksum.
         let checksum = checksum_rx.recv().unwrap();
-        let output_writer = BufWriter::new(File::open(&output_file_path).unwrap());
+        // Open the same file.
+        let mut output_writer = BufWriter::new(File::options().write(true).open(&output_file_path).unwrap());
+        // Seek to the end.
+        output_writer.seek(std::io::SeekFrom::End(0)).unwrap();
 
+        // Make a new compressor.
         let mut parz: ParCompress<Zlib> = ParCompressBuilder::new()
             .write_header_on_start(false)
             .checksum(Some(checksum))
@@ -1059,16 +1068,23 @@ mod test {
             .from_writer(output_writer)
             ;
 
+        // Write the rest of the data.
         parz.write_all(data2).unwrap();
+        // drop the compressor.
         drop(parz);
 
+        // Open the file again.
         let written_file = BufReader::new(File::open(output_file_path).unwrap());
 
+        // Create a decoder.
         let mut decoder = ZlibDecoder::new(written_file);
 
+        // Make somewhere to decode the data into.
         let mut output_buffer = Vec::with_capacity(full_data.len());
+        // read the data into the buffer.
         decoder.read_to_end(&mut output_buffer).unwrap();
 
+        // And ensure all the data is the same.
         assert_eq!(output_buffer, full_data);
 
     }
