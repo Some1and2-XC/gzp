@@ -324,7 +324,7 @@ where
         writer.flush()?;
 
         // Tries to send the checksum to its destination but prints the result instead if
-        // the OnceCell is already set.
+        // the destination is already set.
         if let Some(dest) = checksum_dest.as_ref() {
             match dest.send(running_check) {
                 Ok(v) => v,
