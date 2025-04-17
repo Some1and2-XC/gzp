@@ -1018,6 +1018,61 @@ mod test {
         assert_eq!(input.to_vec(), result);
     }
 
+    #[test]
+    fn test_partial_zlib_writting() -> () {
+
+        let dir = tempdir().unwrap();
+
+        // Create output file
+        let output_file_path = dir.path().join("output.txt");
+        let output_writer = BufWriter::new(File::create(&output_file_path).unwrap());
+
+        // Define input bytes
+        let full_data = b"
+        This is a longer test than normal to come up with a bunch of text.
+        We'll read just a few lines at a time.
+        ";
+
+        // This is the data split into two different slices.
+        let (data1, data2) = full_data.split_at(full_data.len() / 2);
+
+        // Here is the channel that the checksum is going to be passed to and from.
+        let (checksum_tx, checksum_rx) = flume::unbounded::<Adler32>();
+
+        let mut parz: ParCompress<Zlib> = ParCompressBuilder::new()
+            .write_footer_on_exit(false)
+            .checksum_dest(Some(checksum_tx))
+            .from_writer(output_writer)
+            ;
+
+        parz.write_all(data1).unwrap();
+        let maybe_dict = parz.get_dict().cloned();
+        drop(parz);
+
+        let checksum = checksum_rx.recv().unwrap();
+        let output_writer = BufWriter::new(File::open(&output_file_path).unwrap());
+
+        let mut parz: ParCompress<Zlib> = ParCompressBuilder::new()
+            .write_header_on_start(false)
+            .checksum(Some(checksum))
+            .dictionary(maybe_dict)
+            .from_writer(output_writer)
+            ;
+
+        parz.write_all(data2).unwrap();
+        drop(parz);
+
+        let written_file = BufReader::new(File::open(output_file_path).unwrap());
+
+        let mut decoder = ZlibDecoder::new(written_file);
+
+        let mut output_buffer = Vec::with_capacity(full_data.len());
+        decoder.read_to_end(&mut output_buffer).unwrap();
+
+        assert_eq!(output_buffer, full_data);
+
+    }
+
     proptest! {
         #[test]
         #[ignore]

@@ -16,7 +16,7 @@
 //! # }
 //! ```
 use std::{
-    io::{self, Write}, thread::JoinHandle
+    io::{self, Write}, os::fd::AsFd, thread::JoinHandle
 };
 
 use bytes::{Bytes, BytesMut};
@@ -318,14 +318,6 @@ where
         }
         writer.flush()?;
 
-        // Gracefully shutdown the compression threads
-        let res = handles
-            .into_iter()
-            .try_for_each(|handle| match handle.join() {
-                Ok(result) => result,
-                Err(e) => std::panic::resume_unwind(e),
-            });
-
         // Tries to send the checksum to its destination but prints the result instead if
         // the OnceCell is already set.
         if let Some(dest) = checksum_dest.as_ref() {
@@ -338,7 +330,13 @@ where
             };
         }
 
-        return res;
+        // Gracefully shutdown the compression threads
+        handles
+            .into_iter()
+            .try_for_each(|handle| match handle.join() {
+                Ok(result) => result,
+                Err(e) => std::panic::resume_unwind(e),
+            })
 
     }
 
