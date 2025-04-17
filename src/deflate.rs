@@ -1037,7 +1037,7 @@ mod test {
         let (data1, data2) = full_data.split_at(full_data.len() / 2);
 
         // Here is the channel that the checksum is going to be passed to and from.
-        let (checksum_tx, checksum_rx) = flume::unbounded::<Adler32>();
+        let (checksum_tx, checksum_rx) = ParCompressBuilder::<Zlib>::checksum_channel();
 
         // Here we create a compressor.
         let mut parz: ParCompress<Zlib> = ParCompressBuilder::new()

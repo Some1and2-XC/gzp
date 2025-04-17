@@ -151,6 +151,11 @@ where
         self
     }
 
+    /// Creates a channel to be used the [`ParCompressBuilder::checksum_dest`] function.
+    pub fn checksum_channel() -> (Sender<F::C>, Receiver<F::C>) {
+        return flume::unbounded();
+    }
+
     /// Create a configured [`ParCompress`] object.
     pub fn from_writer<W: Write + Send + 'static>(self, writer: W) -> ParCompress<F> {
         let (tx_compressor, rx_compressor) = bounded(self.num_threads * 2);
