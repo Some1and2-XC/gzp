@@ -389,6 +389,11 @@ where
         self.dictionary.as_ref()
     }
 
+    /// Sets the flag specifying if the foot should be written on exit.
+    pub fn set_write_footer_on_exit(&mut self, write_footer_on_exit: bool) -> () {
+        self.write_footer_on_exit = write_footer_on_exit;
+    }
+
 }
 
 impl<F> ZWriter for ParCompress<F>
