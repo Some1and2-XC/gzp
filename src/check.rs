@@ -84,8 +84,8 @@ impl Check for LibDeflateCrc {
 /// The adler32 check implementation for zlib
 #[cfg(feature = "any_zlib")]
 pub struct Adler32 {
-    sum: u32,
-    amount: u32,
+    pub sum: u32,
+    pub amount: u32,
 }
 
 #[cfg(feature = "any_zlib")]
