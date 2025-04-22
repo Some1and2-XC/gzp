@@ -12,6 +12,8 @@
 use flate2::Crc;
 #[cfg(feature = "any_zlib")]
 use libz_ng_sys::{uInt, z_off_t};
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
 pub trait Check {
     /// Current checksum
@@ -32,6 +34,21 @@ pub trait Check {
     fn combine(&mut self, other: &Self)
     where
         Self: Sized;
+
+    #[cfg(feature = "serde")]
+    fn to_serialized<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        ;
+
+    #[cfg(feature = "serde")]
+    fn to_deserialized<'de, D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+            Self: Sized,
+        ;
+
+
 }
 
 /// LibDeflates impl of CRC, this does not implement `combine`
@@ -79,10 +96,26 @@ impl Check for LibDeflateCrc {
     {
         unimplemented!()
     }
+
+    /// Not implemented.
+    fn to_serialized<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer, {
+        unimplemented!()
+    }
+
+    /// Not implemented.
+    fn to_deserialized<'de, D>(_deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+                Self: Sized, {
+        unimplemented!()
+    }
 }
 
 /// The adler32 check implementation for zlib
 #[cfg(feature = "any_zlib")]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Adler32 {
     pub sum: u32,
     pub amount: u32,
@@ -126,6 +159,20 @@ impl Check for Adler32 {
                 as u32;
         self.amount += other.amount;
     }
+
+    fn to_serialized<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer, {
+        return self.serialize(serializer);
+    }
+
+    fn to_deserialized<'de, D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+                Self: Sized, {
+        return Self::deserialize(deserializer);
+    }
+
 }
 
 /// The crc32 check implementation for Gzip
@@ -161,6 +208,20 @@ impl Check for Crc32 {
     fn combine(&mut self, other: &Self) {
         self.crc.combine(&other.crc);
     }
+
+    fn to_serialized<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer, {
+        unimplemented!();
+    }
+
+    fn to_deserialized<'de, D>(_deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+                Self: Sized, {
+        unimplemented!();
+    }
+
 }
 
 /// A passthrough check object that performs no calculations and no-ops all calls.
@@ -195,4 +256,19 @@ impl Check for PassThroughCheck {
         Self: Sized,
     {
     }
+
+    fn to_serialized<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer, {
+        unimplemented!();
+    }
+
+    fn to_deserialized<'de, D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+                Self: Sized, {
+        unimplemented!();
+    }
+
+
 }
