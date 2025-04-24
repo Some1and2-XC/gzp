@@ -35,20 +35,6 @@ pub trait Check {
     where
         Self: Sized;
 
-    #[cfg(feature = "serde")]
-    fn to_serialized<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        ;
-
-    #[cfg(feature = "serde")]
-    fn to_deserialized<'de, D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-            Self: Sized,
-        ;
-
-
 }
 
 /// LibDeflates impl of CRC, this does not implement `combine`
@@ -97,22 +83,6 @@ impl Check for LibDeflateCrc {
         unimplemented!()
     }
 
-    /// Not implemented.
-    #[cfg(feature = "serde")]
-    fn to_serialized<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer, {
-        unimplemented!()
-    }
-
-    /// Not implemented.
-    #[cfg(feature = "serde")]
-    fn to_deserialized<'de, D>(_deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-                Self: Sized, {
-        unimplemented!()
-    }
 }
 
 /// The adler32 check implementation for zlib
@@ -162,21 +132,6 @@ impl Check for Adler32 {
         self.amount += other.amount;
     }
 
-    #[cfg(feature = "serde")]
-    fn to_serialized<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer, {
-        return self.serialize(serializer);
-    }
-
-    #[cfg(feature = "serde")]
-    fn to_deserialized<'de, D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-                Self: Sized, {
-        return Self::deserialize(deserializer);
-    }
-
 }
 
 /// The crc32 check implementation for Gzip
@@ -213,23 +168,6 @@ impl Check for Crc32 {
         self.crc.combine(&other.crc);
     }
 
-    /// Not implemented.
-    #[cfg(feature = "serde")]
-    fn to_serialized<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer, {
-        unimplemented!();
-    }
-
-    /// Not implemented.
-    #[cfg(feature = "serde")]
-    fn to_deserialized<'de, D>(_deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-                Self: Sized, {
-        unimplemented!();
-    }
-
 }
 
 /// A passthrough check object that performs no calculations and no-ops all calls.
@@ -264,23 +202,5 @@ impl Check for PassThroughCheck {
         Self: Sized,
     {
     }
-
-    /// Not implemented.
-    #[cfg(feature = "serde")]
-    fn to_serialized<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer, {
-        unimplemented!();
-    }
-
-    /// Not implemented.
-    #[cfg(feature = "serde")]
-    fn to_deserialized<'de, D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-                Self: Sized, {
-        unimplemented!();
-    }
-
 
 }
