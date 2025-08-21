@@ -501,3 +501,111 @@ where
         self.flush_last(false)
     }
 }
+
+
+#[cfg(test)]
+mod test {
+
+    use std::{error::Error, io::Write, sync::mpsc::{channel, Sender}};
+
+    use crate::{deflate::Zlib, par::{compress::ParCompress, decompress::ParDecompress}, ZWriter};
+
+    #[test]
+    fn test_partial_writing() -> Result<(), Box<dyn Error>> {
+
+        let mut out_data: Vec<u8> = Vec::new();
+
+        // Sets up Compressor
+        let (rx, tx) = channel::<Vec<u8>>();
+        let mut cmprs: ParCompress<Zlib> = ParCompress::builder()
+            .num_threads(4)?
+            .from_writer(OpenWriter::new(rx))
+            ;
+
+        cmprs.write_all(&[1, 2, 3])?;
+
+        if let Ok(data) = tx.recv() {
+            out_data.extend(&data);
+        }
+
+        let dict = match cmprs.get_dictionary() {
+            Some(v) => Some(v.clone()),
+            None => None,
+        };
+
+        // Sets up Compressor
+        let (rx_2, tx_2) = channel::<Vec<u8>>();
+        let mut cmprs_2: ParCompress<Zlib> = ParCompress::builder()
+            .num_threads(4)?
+            .dictionary(dict)
+            .from_writer(OpenWriter::new(rx_2))
+            ;
+
+        tx_2.recv().unwrap();
+
+        cmprs_2.write_all(&[0]).unwrap();
+        tx_2.recv()?;
+
+        cmprs_2.write_all(&[4, 5, 6])?;
+
+        if let Ok(data) = tx_2.recv() {
+            out_data.extend(&data);
+        }
+
+        cmprs_2.finish()?;
+
+        if let Ok(data) = tx_2.recv() {
+            out_data.extend(&data);
+        }
+
+        let decomp: ParDecompress<Zlib> = ParDecompress::builder()
+            .from_reader(out_data)
+            ;
+
+        panic!("{:?}", out_data);
+
+        return Ok(());
+
+    }
+
+    /// This struct is for being a type that implements `write` while also being able to access the
+    /// underlying written data as soon as its written in an async context.
+    pub struct OpenWriter<T> {
+        channel: Sender<T>,
+    }
+
+    impl <T> OpenWriter <T> {
+
+        /// Function for creating a new instance of the writer
+        pub fn new(channel: Sender<T>) -> Self {
+            return Self {
+                channel,
+            };
+        }
+
+    }
+
+
+    impl Write for OpenWriter<Vec<u8>> {
+
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+
+            let buf_lef = buf.len();
+
+            if let Err(_e) = self.channel.send(buf.to_vec()) {
+                // I'm unsure if this is what is the intended use of the BrokenPipe error type however
+                // it seems like a good fit for this usecase.
+                return Err(std::io::ErrorKind::BrokenPipe.into());
+            }
+
+            return Ok(buf_lef);
+
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            return Ok(());
+        }
+
+    }
+
+}
