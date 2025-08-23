@@ -90,7 +90,7 @@ impl Check for LibDeflateCrc {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Adler32 {
     pub sum: u32,
-    pub amount: u32,
+    pub amount: u64,
 }
 
 #[cfg(feature = "any_zlib")]
@@ -102,7 +102,7 @@ impl Check for Adler32 {
 
     #[inline]
     fn amount(&self) -> u32 {
-        self.amount
+        self.amount as u32
     }
 
     #[inline]
@@ -118,7 +118,7 @@ impl Check for Adler32 {
     #[inline]
     fn update(&mut self, bytes: &[u8]) {
         // TODO: safer cast(s)?
-        self.amount += bytes.len() as u32;
+        self.amount += bytes.len() as u64;
         self.sum = unsafe {
             libz_ng_sys::adler32(self.sum, bytes.as_ptr() as *mut _, bytes.len() as uInt)
         } as u32;
